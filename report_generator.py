@@ -35,13 +35,13 @@ class PDF(FPDF):
             self.cell(col_width, 6, str(row_val), 1)
             self.ln()
         self.ln(10)
-    
+
     def write_network_details(self, segments, title):
         self.chapter_title(title)
         if not segments:
             self.set_font('Arial', 'I', 9)
             self.cell(0, 6, "Nenhum trecho definido nesta seção.")
-            self.ln()
+            self.ln(10)
             return
 
         for i, trecho in enumerate(segments):
@@ -54,7 +54,7 @@ class PDF(FPDF):
                 "Material": trecho.get('material', 'N/A'),
                 "Perda em Equip. (m)": f"{trecho.get('perda_equipamento_m', 0):.2f}"
             }
-            
+
             self.set_font('Arial', '', 9)
             for key, val in data.items():
                 self.cell(self.w / 4, 6, key, 1)
@@ -113,7 +113,7 @@ def generate_report(project_name, scenario_name, params_data, results_data, metr
     # Detalhes da Linha de Recalque
     recalque = network_data['recalque']
     pdf.write_network_details(recalque['antes'], "2.1. Linha de Recalque (Antes da Divisão)")
-    
+
     if recalque.get('paralelo'):
         pdf.chapter_title("2.2. Linha de Recalque (Ramais em Paralelo)")
         for nome_ramal, trechos_ramal in recalque['paralelo'].items():
@@ -123,7 +123,7 @@ def generate_report(project_name, scenario_name, params_data, results_data, metr
 
     # Imagens
     pdf.add_page()
-    
+
     # Gráfico de Curvas
     pdf.chapter_title("Gráfico de Curvas: Bomba vs. Sistema")
     try:
@@ -156,5 +156,6 @@ def generate_report(project_name, scenario_name, params_data, results_data, metr
         pdf.set_text_color(0, 0, 0)
         pdf.ln()
 
+    # *** LINHA CORRIGIDA ***
     # Retorna os bytes do PDF para o Streamlit
-    return pdf.output(dest='S').encode('latin-1')
+    return pdf.output()
