@@ -232,15 +232,15 @@ def gerar_grafico_sensibilidade_diametro(sistema_succao_base, sistema_recalque_b
         perda_antes = calcular_perda_serie(sistema_recalque_escalado['antes'], vazao_ref, params_fixos['fluido'], materiais_combinados, fluidos_combinados)
         perda_par, _ = calcular_perdas_paralelo(sistema_recalque_escalado['paralelo'], vazao_ref, params_fixos['fluido'], materiais_combinados, fluidos_combinados)
         perda_depois = calcular_perda_serie(sistema_recalque_escalado['depois'], vazao_ref, params_fixos['fluido'], materiais_combinados, fluidos_combinados)
-        
+
         if perda_par == -1: custos.append(np.nan); continue
 
         perda_total_dinamica = perda_succao + perda_antes + perda_par + perda_depois
         h_man = params_fixos['h_estatica_total'] + perda_total_dinamica
-        
+
         resultado_energia = calcular_analise_energetica(vazao_ref, h_man, fluidos_combinados=fluidos_combinados, **params_fixos['equipamentos'])
         custos.append(resultado_energia['custo_anual'])
-        
+
     return pd.DataFrame({'Fator de Escala nos Diâmetros (%)': fatores, 'Custo Anual de Energia (R$)': custos})
 
 def render_trecho_ui(trecho, prefixo, lista_trechos, materiais_combinados):
@@ -305,7 +305,7 @@ authenticator.login()
 if st.session_state.get("authentication_status"):
     name = st.session_state['name']
     username = st.session_state['username']
-    
+
     # Inicialização do st.session_state
     if 'trechos_succao' not in st.session_state: st.session_state.trechos_succao = []
     if 'trechos_antes' not in st.session_state: st.session_state.trechos_antes = []
@@ -330,12 +330,12 @@ if st.session_state.get("authentication_status"):
     fluidos_combinados = {**FLUIDOS_PADRAO, **user_fluids}
     user_materials = get_user_materials(username)
     materiais_combinados = {**MATERIAIS_PADRAO, **user_materials}
-    
+
     with st.sidebar:
         st.header(f"Bem-vindo(a), {name}!")
         st.divider()
         st.header("🚀 Gestão de Projetos e Cenários")
-        
+
         user_projects = get_user_projects(username)
         project_idx = 0
         if st.session_state.get('project_to_select') in user_projects:
@@ -343,7 +343,7 @@ if st.session_state.get("authentication_status"):
             del st.session_state['project_to_select']
         elif st.session_state.get('selected_project') in user_projects:
             project_idx = user_projects.index(st.session_state.get('selected_project'))
-        
+
         st.selectbox("Selecione o Projeto", user_projects, index=project_idx, key="selected_project", placeholder="Nenhum projeto encontrado")
 
         scenarios = []
@@ -357,7 +357,7 @@ if st.session_state.get("authentication_status"):
                 scenario_idx = scenarios.index(st.session_state.get('selected_scenario'))
 
         st.selectbox("Selecione o Cenário", scenarios, index=scenario_idx, key="selected_scenario", placeholder="Nenhum cenário encontrado")
-        
+
         col1, col2 = st.columns(2)
         if col1.button("Carregar Cenário", use_container_width=True, disabled=not st.session_state.get("selected_scenario")):
             data = load_scenario(username, st.session_state.selected_project, st.session_state.selected_scenario)
@@ -417,7 +417,7 @@ if st.session_state.get("authentication_status"):
                 st.rerun()
             else:
                 st.warning("É necessário um nome para o Projeto e para o Cenário.")
-        
+
         st.divider()
         authenticator.logout('Logout', 'sidebar')
         st.divider()
@@ -485,7 +485,7 @@ if st.session_state.get("authentication_status"):
         if st.session_state.fluido_selecionado in lista_fluidos:
             idx_fluido = lista_fluidos.index(st.session_state.fluido_selecionado)
         st.session_state.fluido_selecionado = st.selectbox("Selecione o Fluido", lista_fluidos, index=idx_fluido)
-        
+
         st.subheader("Parâmetros de Sucção (NPSH)")
         st.session_state.suction_tank_type = st.radio("Condição do Reservatório de Sucção", ["Atmosférico", "Pressurizado"], key="suction_tank_selector", index=["Atmosférico", "Pressurizado"].index(st.session_state.suction_tank_type))
         if st.session_state.suction_tank_type == "Atmosférico":
@@ -522,7 +522,7 @@ if st.session_state.get("authentication_status"):
                     trecho['nome'] = f"Recalque Primário {i+1}"
                 with st.container(border=True): render_trecho_ui(trecho, f"antes_{i}", st.session_state.trechos_antes, materiais_combinados)
             c1, c2 = st.columns(2); c1.button("Adicionar Trecho (Antes)", on_click=adicionar_item, args=("trechos_antes",), use_container_width=True); c2.button("Remover Trecho (Antes)", on_click=remover_ultimo_item, args=("trechos_antes",), use_container_width=True)
-            
+
             st.subheader("2.2. Ramais em Paralelo")
             for nome_ramal, trechos_ramal in st.session_state.ramais_paralelos.items():
                 with st.container(border=True):
@@ -532,23 +532,23 @@ if st.session_state.get("authentication_status"):
                             trecho['nome'] = f"{nome_ramal} (T{i+1})"
                         render_trecho_ui(trecho, f"par_{nome_ramal}_{i}", trechos_ramal, materiais_combinados)
             c1, c2 = st.columns(2); c1.button("Adicionar Ramal Paralelo", on_click=adicionar_ramal_paralelo, use_container_width=True); c2.button("Remover Último Ramal", on_click=remover_ultimo_ramal, use_container_width=True, disabled=len(st.session_state.ramais_paralelos) < 2)
-            
+
             st.subheader("2.3. Trechos em Série (Depois da Junção)")
             for i, trecho in enumerate(st.session_state.trechos_depois):
                 if 'nome' not in trecho or not trecho.get('nome'):
                     trecho['nome'] = f"Recalque Final {i+1}"
                 with st.container(border=True): render_trecho_ui(trecho, f"depois_{i}", st.session_state.trechos_depois, materiais_combinados)
             c1, c2 = st.columns(2); c1.button("Adicionar Trecho (Depois)", on_click=adicionar_item, args=("trechos_depois",), use_container_width=True); c2.button("Remover Trecho (Depois)", on_click=remover_ultimo_item, args=("trechos_depois",), use_container_width=True)
-        
+
         st.divider(); st.header("🔌 Equipamentos e Custo"); rend_motor = st.slider("Eficiência do Motor (%)", 1, 100, 90); horas_por_dia = st.number_input("Horas por Dia", 1.0, 24.0, 8.0, 0.5); tarifa_energia = st.number_input("Custo da Energia (R$/kWh)", 0.10, 5.00, 0.75, 0.01, format="%.2f")
 
     # --- CORPO PRINCIPAL DA APLICAÇÃO ---
     st.title("💧 Análise de Redes de Bombeamento com Curva de Bomba")
-    
+
     try:
         sistema_succao_atual = st.session_state.trechos_succao
         sistema_recalque_atual = {'antes': st.session_state.trechos_antes, 'paralelo': st.session_state.ramais_paralelos, 'depois': st.session_state.trechos_depois}
-        
+
         func_curva_bomba = criar_funcao_curva(st.session_state.curva_altura_df, "Vazão (m³/h)", "Altura (m)")
         func_curva_eficiencia = criar_funcao_curva(st.session_state.curva_eficiencia_df, "Vazão (m³/h)", "Eficiência (%)")
         func_curva_npshr = criar_funcao_curva(st.session_state.curva_npshr_df, "Vazão (m³/h)", "NPSHr (m)")
@@ -556,20 +556,23 @@ if st.session_state.get("authentication_status"):
         if func_curva_bomba is None or func_curva_eficiencia is None or func_curva_npshr is None:
             st.warning("Forneça pontos de dados suficientes para todas as curvas da bomba (Altura, Eficiência e NPSHr).")
             st.stop()
-        
+
         rho_selecionado = fluidos_combinados[st.session_state.fluido_selecionado]['rho']
         h_pressao_final_m = 0
         if st.session_state.endpoint_type == "Pressurizado":
             h_pressao_final_m = converter_pressao_para_mca(st.session_state.final_pressure, 'kgf/cm2', rho_selecionado)
-        
-        h_estatica_total = st.session_state.h_geometrica + st.session_state.h_estatica_succao + h_pressao_final_m
+
+        # *** LINHA CORRIGIDA ***
+        h_estatica_total = st.session_state.h_geometrica - st.session_state.h_estatica_succao + h_pressao_final_m
 
         shutoff_head = func_curva_bomba(0)
-        if shutoff_head < h_estatica_total:
-            st.error(f"**Bomba Incompatível:** A altura máxima da bomba ({shutoff_head:.2f} m) é menor que a Altura Estática Total ({h_estatica_total:.2f} m).")
+        # A altura estática a ser vencida pela bomba é a diferença de cotas + diferença de pressão
+        altura_estatica_real = st.session_state.h_geometrica - st.session_state.h_estatica_succao + h_pressao_final_m
+        if shutoff_head < altura_estatica_real:
+            st.error(f"**Bomba Incompatível:** A altura máxima da bomba ({shutoff_head:.2f} m) é menor que a Altura Estática Total a ser vencida ({altura_estatica_real:.2f} m).")
             st.stop()
 
-        is_rede_vazia = not (sistema_succao_atual or any(sistema_recalque_atual.values()))
+        is_rede_vazia = not (sistema_succao_atual or any(trecho for parte in sistema_recalque_atual.values() for trecho in (parte if isinstance(parte, list) else [item for sublist in parte.values() for item in sublist])))
         if is_rede_vazia:
             st.warning("Adicione pelo menos um trecho à rede (sucção ou recalque) para realizar o cálculo.")
             st.stop()
@@ -583,12 +586,12 @@ if st.session_state.get("authentication_status"):
             materiais_combinados,
             fluidos_combinados
         )
-        
+
         if vazao_op is not None and altura_op is not None:
             eficiencia_op = func_curva_eficiencia(vazao_op)
             if eficiencia_op > 100: eficiencia_op = 100
             if eficiencia_op < 0: eficiencia_op = 0
-            
+
             # --- CÁLCULO DE NPSH ---
             # 1. Pressão na superfície do líquido
             h_superficie_m = 0
@@ -606,10 +609,10 @@ if st.session_state.get("authentication_status"):
             # 5. NPSH Requerido
             npshr_op = func_curva_npshr(vazao_op)
             margem_npsh = npsha_op - npshr_op
-            
+
             # --- RESULTADOS ---
             resultados_energia = calcular_analise_energetica(vazao_op, altura_op, eficiencia_op, rend_motor, horas_por_dia, tarifa_energia, st.session_state.fluido_selecionado, fluidos_combinados)
-            
+
             st.header("📊 Resultados no Ponto de Operação")
             c1,c2,c3,c4 = st.columns(4)
             c1.metric("Vazão de Operação", f"{vazao_op:.2f} m³/h")
@@ -626,9 +629,9 @@ if st.session_state.get("authentication_status"):
             st.divider()
 
             fig_curvas, ax_curvas = plt.subplots(figsize=(8.5, 5.5))
-            
+
             label_ponto_op = f'Ponto de Operação ({vazao_op:.1f} m³/h, {altura_op:.1f} m)'
-            
+
             max_vazao_curva = st.session_state.curva_altura_df['Vazão (m³/h)'].max()
             max_plot_vazao = max(vazao_op * 1.2, max_vazao_curva * 1.2) if vazao_op else max_vazao_curva * 1.2
             vazao_range = np.linspace(0, max_plot_vazao, 100)
@@ -642,19 +645,18 @@ if st.session_state.get("authentication_status"):
             ax_curvas.set_ylabel("Altura Manométrica (m)")
             ax_curvas.legend()
             ax_curvas.grid(True)
-            
+
             st.header("📄 Exportar Relatório")
             params_data = {
                 "Fluido Selecionado": st.session_state.fluido_selecionado,
-                "Altura Geométrica Total (m)": f"{st.session_state.h_geometrica + st.session_state.h_estatica_succao:.2f}",
+                "Altura Estática Total (m)": f"{altura_estatica_real:.2f}",
                 "Condição Final": st.session_state.endpoint_type,
             }
             if st.session_state.endpoint_type == "Pressurizado":
                 params_data["Pressão Final (kgf/cm²)"] = f"{st.session_state.final_pressure:.3f}"
                 params_data["Altura de Pressão (m)"] = f"{h_pressao_final_m:.2f}"
-            
+
             params_data.update({
-                "Altura Estática Total (m)": f"{h_estatica_total:.2f}",
                 "Horas de Operação por Dia": f"{horas_por_dia:.1f}",
                 "Custo de Energia (R$/kWh)": f"{tarifa_energia:.2f}",
                 "Eficiência do Motor (%)": f"{rend_motor:.1f}"
@@ -672,7 +674,7 @@ if st.session_state.get("authentication_status"):
                 ("Altura (m)", f"{altura_op:.2f}"),
                 ("Eficiência Bomba (%)", f"{eficiencia_op:.1f}")
             ]
-            
+
             _, distribuicao_vazao_op = calcular_perdas_paralelo(sistema_recalque_atual['paralelo'], vazao_op, st.session_state.fluido_selecionado, materiais_combinados, fluidos_combinados)
             diagrama_obj = gerar_diagrama_rede(sistema_succao_atual, sistema_recalque_atual, vazao_op, distribuicao_vazao_op if len(sistema_recalque_atual['paralelo']) >= 2 else {}, st.session_state.fluido_selecionado, materiais_combinados, fluidos_combinados)
             diagrama_bytes = diagrama_obj.pipe(format='png')
@@ -702,7 +704,7 @@ if st.session_state.get("authentication_status"):
                 file_name=f"Relatorio_{st.session_state.get('selected_project', 'NovoProjeto')}_{st.session_state.get('selected_scenario', 'NovoCenario')}.pdf",
                 mime="application/pdf"
             )
-            
+
             st.divider()
             st.header("🗺️ Diagrama da Rede")
             st.graphviz_chart(diagrama_obj)
