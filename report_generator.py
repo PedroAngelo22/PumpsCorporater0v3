@@ -156,6 +156,6 @@ def generate_report(project_name, scenario_name, params_data, results_data, metr
         pdf.set_text_color(0, 0, 0)
         pdf.ln()
 
-    # *** LINHA CORRIGIDA ***
+    # *** LINHA CORRIGIDA DEFINITIVAMENTE ***
     # Retorna os bytes do PDF para o Streamlit
-    return pdf.output()
+    return pdf.output(dest='S')
