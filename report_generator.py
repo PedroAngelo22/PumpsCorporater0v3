@@ -5,7 +5,7 @@ import io
 from PIL import Image
 import os
 
-class PDF(FPDF):
+class PDFReport(FPDF):
     def __init__(self, project_name, scenario_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.project_name = project_name
@@ -13,8 +13,8 @@ class PDF(FPDF):
         self.set_auto_page_break(auto=True, margin=20)
 
     def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'Relatório de Análise de Rede Hidráulica', 0, 1, 'C')
+        self.set_font('Arial', 'B', 16)
+        self.cell(0, 10, 'Relatório de Análise Hidráulica', 0, 1, 'C')
         self.set_font('Arial', '', 10)
         self.cell(0, 6, f'Projeto: {self.project_name} | Cenário: {self.scenario_name}', 0, 1, 'C')
         self.ln(5)
@@ -26,71 +26,102 @@ class PDF(FPDF):
         self.set_x(10)
         self.cell(0, 10, f'Gerado em: {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}', 0, 0, 'L')
 
-    def chapter_title(self, title):
+    def add_section_title(self, title):
+        self.ln(5)
         self.set_font('Arial', 'B', 12)
         self.set_fill_color(230, 230, 230)
+        if self.get_y() + 12 > self.page_break_trigger:
+            self.add_page()
         self.cell(0, 8, title, 0, 1, 'L', fill=True)
         self.ln(4)
 
-    def create_table(self, data, headers, title):
-        self.chapter_title(title)
-        self.set_font('Arial', 'B', 9)
-        col_width = (self.w - 20) / 2
-        for header in headers:
-            self.cell(col_width, 7, header, 1, 0, 'C')
-        self.ln()
-        self.set_font('Arial', '', 9)
-        for row_key, row_val in data.items():
-            self.cell(col_width, 6, str(row_key), 1)
-            self.cell(col_width, 6, str(row_val), 1)
+    def add_key_value_table(self, data_dict):
+        self.set_font('Arial', '', 10)
+        for key, value in data_dict.items():
+            if self.get_y() + 8 > self.page_break_trigger:
+                self.add_page()
+            self.set_font('', 'B')
+            self.cell(70, 8, f'{key}:', border=1)
+            self.set_font('', '')
+            self.cell(0, 8, f' {value}', border=1)
             self.ln()
         self.ln(5)
 
-    def write_network_details(self, segments, title):
-        self.chapter_title(title)
-        if not segments:
-            self.set_font('Arial', 'I', 9)
-            self.cell(0, 6, "Nenhum trecho definido nesta seção.")
-            self.ln(5)
-            return
+    def add_results_metrics(self, metrics_data):
+        self.set_font('Arial', 'B', 11)
+        num_metrics = len(metrics_data)
+        cell_width = (self.w - 20) / num_metrics if num_metrics > 0 else (self.w - 20)
+        
+        for title, _ in metrics_data:
+            self.cell(cell_width, 7, title, 1, 0, 'C')
+        self.ln()
 
-        for i, trecho in enumerate(segments):
-            self.set_font('Arial', 'B', 10)
-            self.cell(0, 8, f"Trecho {i+1}: {trecho.get('nome', 'N/A')}", 0, 1)
-            data = {
-                "Comprimento (m)": f"{trecho.get('comprimento', 0):.2f}",
-                "Diâmetro (mm)": f"{trecho.get('diametro', 0):.2f}",
-                "Material": trecho.get('material', 'N/A'),
-                "Perda em Equip. (m)": f"{trecho.get('perda_equipamento_m', 0):.2f}"
-            }
-            self.set_font('Arial', '', 9)
-            for key, val in data.items():
-                self.cell(45, 6, key, 1)
-                self.cell(50, 6, val, 1)
-                self.ln()
-            if trecho.get('acessorios'):
-                self.set_font('Arial', 'B', 9)
-                self.cell(0, 7, "Acessórios neste trecho:", 0, 1)
-                self.cell(95, 6, "Nome", 1)
-                self.cell(25, 6, "Quantidade", 1)
-                self.cell(25, 6, "Fator K", 1)
-                self.ln()
-                self.set_font('Arial', '', 9)
-                for acc in trecho['acessorios']:
-                    self.cell(95, 6, acc['nome'], 1)
-                    self.cell(25, 6, str(acc['quantidade']), 1, 0, 'C')
-                    self.cell(25, 6, str(acc['k']), 1, 0, 'C')
-                    self.ln()
-            self.ln(5)
+        self.set_font('', '')
+        for _, value in metrics_data:
+            self.cell(cell_width, 10, value, 1, 0, 'C')
+        self.ln()
+        self.ln(5)
 
-    def add_image_from_bytes(self, image_bytes, title):
-        self.chapter_title(title)
-        if not image_bytes:
-            self.set_font('Arial', 'I', 9)
-            self.cell(0, 6, "Imagem não pôde ser gerada.")
-            self.ln(5)
-            return
+    def add_network_summary_table(self, network_data):
+        self.set_font('Arial', 'B', 10)
+        
+        # Cabeçalho da Tabela
+        self.cell(70, 7, 'Trecho / Ramal', 1, 0, 'C')
+        self.cell(20, 7, 'L (m)', 1, 0, 'C')
+        self.cell(20, 7, 'Ø (mm)', 1, 0, 'C')
+        self.cell(30, 7, 'Perda Equip. (m)', 1, 0, 'C')
+        self.cell(50, 7, 'Material', 1, 1, 'C')
+        
+        self.set_font('Arial', '', 9)
 
+        def draw_rows(title, trechos):
+            if trechos:
+                if self.get_y() + 15 > self.page_break_trigger: self.add_page()
+                self.set_font('', 'B')
+                self.cell(0, 7, title, 1, 1, 'L', fill=True)
+                self.set_font('', '')
+                for i, trecho in enumerate(trechos):
+                    if self.get_y() + 7 > self.page_break_trigger:
+                        self.add_page()
+                        self.set_font('Arial', 'B', 10)
+                        self.cell(70, 7, 'Trecho / Ramal', 1, 0, 'C'); self.cell(20, 7, 'L (m)', 1, 0, 'C'); self.cell(20, 7, 'Ø (mm)', 1, 0, 'C'); self.cell(30, 7, 'Perda Equip. (m)', 1, 0, 'C'); self.cell(50, 7, 'Material', 1, 1, 'C')
+                        self.set_font('Arial', '', 9)
+
+                    nome_trecho = trecho.get('nome', f'Trecho {i+1}')
+                    perda_equip_val = trecho.get('perda_equipamento_m', 0.0)
+                    
+                    self.cell(70, 7, f'  - {nome_trecho}', 1, 0, 'L')
+                    self.cell(20, 7, f"{trecho['comprimento']:.2f}", 1, 0, 'C')
+                    self.cell(20, 7, f"{trecho['diametro']:.2f}", 1, 0, 'C')
+                    self.cell(30, 7, f"{perda_equip_val:.2f}", 1, 0, 'C')
+                    self.cell(50, 7, trecho['material'], 1, 1, 'L')
+
+        # Desenha as seções da rede
+        draw_rows('Linha de Sucção', network_data.get('succao', []))
+        recalque = network_data.get('recalque', {})
+        draw_rows('Recalque - Série (Antes da Divisão)', recalque.get('antes', []))
+        
+        if recalque.get('paralelo'):
+            if self.get_y() + 15 > self.page_break_trigger: self.add_page()
+            self.set_font('', 'B')
+            self.cell(0, 7, 'Recalque - Ramais em Paralelo', 1, 1, 'L', fill=True)
+            self.set_font('', '')
+            for ramal_name, trechos_ramal in recalque['paralelo'].items():
+                for i, trecho in enumerate(trechos_ramal):
+                    if self.get_y() + 7 > self.page_break_trigger: self.add_page()
+                    nome_trecho_ramal = trecho.get('nome', f'{ramal_name} (T{i+1})')
+                    perda_equip_val = trecho.get('perda_equipamento_m', 0.0)
+                    self.cell(70, 7, f'  - {nome_trecho_ramal}', 1, 0, 'L')
+                    self.cell(20, 7, f"{trecho['comprimento']:.2f}", 1, 0, 'C')
+                    self.cell(20, 7, f"{trecho['diametro']:.2f}", 1, 0, 'C')
+                    self.cell(30, 7, f"{perda_equip_val:.2f}", 1, 0, 'C')
+                    self.cell(50, 7, trecho['material'], 1, 1, 'L')
+
+        draw_rows('Recalque - Série (Depois da Junção)', recalque.get('depois', []))
+        self.ln(5)
+
+    def add_image_from_bytes(self, image_bytes):
+        if not image_bytes: return
         temp_img_path = f"temp_image_{time.time()}.png"
         try:
             with open(temp_img_path, "wb") as f:
@@ -114,27 +145,40 @@ class PDF(FPDF):
                 os.remove(temp_img_path)
 
 def generate_report(project_name, scenario_name, params_data, results_data, metrics_data, network_data, diagram_image_bytes, chart_figure_bytes):
-    pdf = PDF(project_name, scenario_name)
+    pdf = PDFReport(project_name, scenario_name)
     pdf.add_page()
     
-    pdf.create_table(dict(metrics_data), ["Ponto de Operação", "Valor"], "Resumo do Ponto de Operação")
-    pdf.create_table(results_data, ["Resultados Principais", "Valor"], "Resultados de Performance e Segurança")
-    pdf.create_table(params_data, ["Parâmetros de Entrada", "Valor"], "Parâmetros da Simulação")
+    # 1. Parâmetros Gerais
+    pdf.add_section_title('Parâmetros Gerais da Simulação')
+    pdf.add_key_value_table(params_data)
 
-    pdf.add_page()
-    pdf.chapter_title("Detalhamento da Rede de Tubulação")
-    pdf.write_network_details(network_data.get('succao', []), "1. Linha de Sucção")
-    recalque = network_data.get('recalque', {})
-    pdf.write_network_details(recalque.get('antes', []), "2.1. Linha de Recalque (Antes da Divisão)")
-    if recalque.get('paralelo'):
-        pdf.chapter_title("2.2. Linha de Recalque (Ramais em Paralelo)")
-        for nome_ramal, trechos_ramal in recalque['paralelo'].items():
-            pdf.write_network_details(trechos_ramal, f"Ramal: {nome_ramal}")
-    pdf.write_network_details(recalque.get('depois', []), "2.3. Linha de Recalque (Depois da Junção)")
+    # 2. Resumo da Rede
+    pdf.add_section_title('Resumo da Rede de Tubulação')
+    pdf.add_network_summary_table(network_data)
 
-    pdf.add_page()
-    pdf.add_image_from_bytes(chart_figure_bytes, "Gráfico de Curvas: Bomba vs. Sistema")
-    pdf.add_image_from_bytes(diagram_image_bytes, "Diagrama da Rede")
+    # 3. Diagrama da Rede
+    pdf.add_section_title('Diagrama da Rede')
+    pdf.add_image_from_bytes(diagram_image_bytes)
+    
+    # 4. Análise de NPSH (NOVA SEÇÃO)
+    npsh_keys = ["NPSH Disponível (m)", "NPSH Requerido (m)", "Margem de Segurança NPSH (m)"]
+    npsh_data = {k: results_data[k] for k in npsh_keys if k in results_data}
+    cost_data = {k: v for k, v in results_data.items() if k not in npsh_keys}
+    if npsh_data:
+        pdf.add_section_title('Análise de NPSH')
+        pdf.add_key_value_table(npsh_data)
 
-    # *** USANDO O MÉTODO DE RETORNO DO SEU CÓDIGO ORIGINAL E FUNCIONAL ***
+    # 5. Resultados no Ponto de Operação
+    pdf.add_section_title('Resultados no Ponto de Operação')
+    pdf.add_results_metrics(metrics_data)
+    
+    # 6. Análise de Custo Energético
+    if cost_data:
+        pdf.add_section_title('Análise de Custo Energético')
+        pdf.add_key_value_table(cost_data)
+
+    # 7. Gráfico das Curvas
+    pdf.add_section_title('Gráfico: Curva da Bomba vs. Curva do Sistema')
+    pdf.add_image_from_bytes(chart_figure_bytes)
+    
     return bytes(pdf.output())
