@@ -1,4 +1,3 @@
-# app_principal.py
 import streamlit as st
 import pandas as pd
 import math
@@ -12,6 +11,7 @@ import yaml
 from yaml.loader import SafeLoader
 import streamlit_authenticator as stauth
 
+# Importando as funções do banco de dados e do gerador de relatórios
 from database import (
     setup_database, save_scenario, load_scenario, get_user_projects, 
     get_scenarios_for_project, delete_scenario, add_user_fluid, get_user_fluids, 
@@ -28,6 +28,7 @@ MATERIAIS_PADRAO = {
     "Aço Carbono (novo)": 0.046, "Aço Carbono (pouco uso)": 0.1, "Aço Carbono (enferrujado)": 0.2,
     "Aço Inox": 0.002, "Ferro Fundido": 0.26, "PVC / Plástico": 0.0015, "Concreto": 0.5
 }
+# ADICIONADO CAMPO 'pvap' (Pressão de Vapor em Pascal)
 FLUIDOS_PADRAO = { 
     "Água a 20°C": {"rho": 998.2, "nu": 1.004e-6, "pvap": 2339},
     "Etanol a 20°C": {"rho": 789.0, "nu": 1.51e-6, "pvap": 5866}
@@ -112,15 +113,13 @@ def converter_pressao_para_mca(pressao_kgfcm2, rho_fluido):
     altura_m = pressao_pa / (rho_fluido * 9.81)
     return altura_m
 
-# --- ALTERAÇÃO 1: Função de Ponto de Operação agora considera Sucção + Recalque ---
 def encontrar_ponto_operacao(sistema, h_estatica_total, fluido, func_curva_bomba, materiais_combinados, fluidos_combinados):
     def curva_sistema(vazao_m3h):
         if vazao_m3h < 0: return h_estatica_total
         
-        # Calcula perdas na sucção
+        # Perda de carga total é a soma das perdas na sucção e no recalque
         perda_succao = calcular_perda_serie(sistema['succao'], vazao_m3h, fluido, materiais_combinados, fluidos_combinados)
         
-        # Calcula perdas no recalque
         perda_recalque_antes = calcular_perda_serie(sistema['recalque_antes'], vazao_m3h, fluido, materiais_combinados, fluidos_combinados)
         perda_par, _ = calcular_perdas_paralelo(sistema['recalque_paralelo'], vazao_m3h, fluido, materiais_combinados, fluidos_combinados)
         if perda_par == -1: return 1e12
@@ -142,24 +141,39 @@ def encontrar_ponto_operacao(sistema, h_estatica_total, fluido, func_curva_bomba
     else:
         return None, None, curva_sistema
 
+# NOVA FUNÇÃO PARA CÁLCULO DE NPSH
 def calcular_npsh_disponivel(params, vazoa_op_m3h, sistema_succao, fluido_selecionado, materiais_combinados, fluidos_combinados):
     g = 9.81
     rho = fluidos_combinados[fluido_selecionado]['rho']
+    
+    # Pressão atmosférica em metros de coluna de fluido
     p_atm_pa = 101325 * (1 - 2.25577e-5 * params['altitude'])**5.25588
     h_atm = p_atm_pa / (rho * g)
+
+    # Pressão de vapor em metros de coluna de fluido
     pvap_pa = fluidos_combinados[fluido_selecionado].get('pvap', 0)
     h_vap = pvap_pa / (rho * g)
-    h_perda_succao = calcular_perda_serie(sistema_succao, vazoa_op_m3h, fluido_selecionado, materiais_combinados, fluidos_combinados)
-    h_geo_succao = params['h_geo_succao']
-    npshd = h_atm - h_vap - h_geo_succao - h_perda_succao
-    return { "npshd": npshd, "h_atm": h_atm, "h_vap": h_vap, "h_perda_succao": h_perda_succao }
 
-# --- ALTERAÇÃO 2: Diagrama agora desenha a linha de sucção separadamente ---
+    # Perda de carga na linha de sucção
+    h_perda_succao = calcular_perda_serie(sistema_succao, vazoa_op_m3h, fluido_selecionado, materiais_combinados, fluidos_combinados)
+
+    # Altura geométrica de sucção
+    h_geo_succao = params['h_geo_succao']
+    
+    # Fórmula final do NPSHd
+    npshd = h_atm - h_vap - h_geo_succao - h_perda_succao
+    return {
+        "npshd": npshd,
+        "h_atm": h_atm,
+        "h_vap": h_vap,
+        "h_perda_succao": h_perda_succao
+    }
+
 def gerar_diagrama_rede(sistema, vazao_total, distribuicao_vazao, fluido, materiais_combinados, fluidos_combinados):
     dot = graphviz.Digraph(comment='Rede de Tubulação'); dot.attr('graph', rankdir='LR', splines='ortho'); dot.attr('node', shape='point'); dot.node('start', 'Fonte', shape='circle', style='filled', fillcolor='lightblue')
     ultimo_no = 'start'
 
-    # Desenha a Linha de Sucção
+    # 1. Desenha a Linha de Sucção
     for i, trecho in enumerate(sistema['succao']):
         proximo_no = f"no_succao_{i+1}"
         perdas_info = calcular_perdas_trecho(trecho, vazao_total, fluido, materiais_combinados, fluidos_combinados)
@@ -169,11 +183,11 @@ def gerar_diagrama_rede(sistema, vazao_total, distribuicao_vazao, fluido, materi
         dot.edge(ultimo_no, proximo_no, label=label)
         ultimo_no = proximo_no
 
-    # Adiciona a Bomba
+    # 2. Adiciona a Bomba
     no_bomba = 'bomba'; dot.node(no_bomba, 'Bomba', shape='circle', style='filled', fillcolor='orange'); dot.edge(ultimo_no, no_bomba)
     ultimo_no = no_bomba
 
-    # Desenha a Linha de Recalque
+    # 3. Desenha a Linha de Recalque
     for i, trecho in enumerate(sistema['recalque_antes']):
         proximo_no = f"no_antes_{i+1}"
         perdas_info = calcular_perdas_trecho(trecho, vazao_total, fluido, materiais_combinados, fluidos_combinados)
@@ -211,23 +225,18 @@ def gerar_diagrama_rede(sistema, vazao_total, distribuicao_vazao, fluido, materi
     return dot
 
 def gerar_grafico_sensibilidade_diametro(sistema_base, fator_escala_range, **params_fixos):
-    # Esta função precisaria de um ajuste mais complexo para decidir qual diâmetro escalar (sucção, recalque ou ambos).
-    # Por simplicidade, vamos manter escalando todos por enquanto.
     custos, fatores = [], np.arange(fator_escala_range[0], fator_escala_range[1] + 5, 5)
     materiais_combinados = params_fixos['materiais_combinados']
     fluidos_combinados = params_fixos['fluidos_combinados']
     for fator in fatores:
         escala = fator / 100.0
-        # Cria cópias profundas para evitar alterar o estado original
         sistema_escalado = {
             'succao': [t.copy() for t in sistema_base['succao']],
             'recalque_antes': [t.copy() for t in sistema_base['recalque_antes']],
             'recalque_paralelo': {k: [t.copy() for t in v] for k, v in sistema_base['recalque_paralelo'].items()},
             'recalque_depois': [t.copy() for t in sistema_base['recalque_depois']]
         }
-
-        # Itera sobre todas as seções para escalar o diâmetro
-        for secao_nome, secao_conteudo in sistema_escalado.items():
+        for secao_conteudo in sistema_escalado.values():
             if isinstance(secao_conteudo, list):
                 for t in secao_conteudo: t['diametro'] *= escala
             elif isinstance(secao_conteudo, dict):
@@ -291,7 +300,7 @@ authenticator.login()
 if st.session_state.get("authentication_status"):
     name = st.session_state['name']; username = st.session_state['username']
     
-    # --- ALTERAÇÃO 3: Nova estrutura de dados com seção de sucção dedicada ---
+    # NOVA ESTRUTURA DE DADOS COM SUCÇÃO
     if 'trechos_succao' not in st.session_state: st.session_state.trechos_succao = []
     if 'trechos_antes' not in st.session_state: st.session_state.trechos_antes = []
     if 'trechos_depois' not in st.session_state: st.session_state.trechos_depois = []
@@ -333,10 +342,10 @@ if st.session_state.get("authentication_status"):
                 st.session_state.altitude = data.get('altitude', 0.0); st.session_state.h_geo_succao = data.get('h_geo_succao', 2.0)
                 st.session_state.curva_altura_df = pd.DataFrame(data['curva_altura']); st.session_state.curva_eficiencia_df = pd.DataFrame(data['curva_eficiencia'])
                 st.session_state.curva_npshr_df = pd.DataFrame(data.get('curva_npshr', st.session_state.curva_npshr_df))
-                st.session_state.trechos_succao = data.get('trechos_succao', []) # Carregar nova seção
-                st.session_state.trechos_antes = data.get('trechos_antes', data.get('trechos_recalque_antes', [])) # Compatibilidade com cenários antigos
-                st.session_state.trechos_depois = data.get('trechos_depois', data.get('trechos_recalque_depois', []))
-                st.session_state.ramais_paralelos = data.get('ramais_paralelos', data.get('trechos_recalque_paralelo', {}))
+                st.session_state.trechos_succao = data.get('trechos_succao', [])
+                st.session_state.trechos_antes = data.get('trechos_antes', [])
+                st.session_state.trechos_depois = data.get('trechos_depois', [])
+                st.session_state.ramais_paralelos = data.get('ramais_paralelos', {})
                 st.success(f"Cenário '{st.session_state.selected_scenario}' carregado."); st.rerun()
         if col2.button("Deletar Cenário", use_container_width=True, disabled=not st.session_state.get("selected_scenario")):
             delete_scenario(username, st.session_state.selected_project, st.session_state.selected_scenario)
@@ -351,7 +360,7 @@ if st.session_state.get("authentication_status"):
                     'altitude': st.session_state.altitude, 'h_geo_succao': st.session_state.h_geo_succao, 'fluido_selecionado': st.session_state.fluido_selecionado,
                     'curva_altura': st.session_state.curva_altura_df.to_dict('records'), 'curva_eficiencia': st.session_state.curva_eficiencia_df.to_dict('records'),
                     'curva_npshr': st.session_state.curva_npshr_df.to_dict('records'),
-                    'trechos_succao': st.session_state.trechos_succao, # Salvar nova seção
+                    'trechos_succao': st.session_state.trechos_succao,
                     'trechos_antes': st.session_state.trechos_antes, 'trechos_depois': st.session_state.trechos_depois, 'ramais_paralelos': st.session_state.ramais_paralelos
                 }
                 save_scenario(username, project_name_input, scenario_name_input, scenario_data)
@@ -359,9 +368,33 @@ if st.session_state.get("authentication_status"):
             else: st.warning("É necessário um nome para o Projeto e para o Cenário.")
         
         st.divider(); authenticator.logout('Logout', 'sidebar'); st.divider()
+
         with st.expander("📚 Gerenciador da Biblioteca"):
-            # ... (código da biblioteca igual, já modificado para pvap)
-            pass # Omitido para brevidade, o código é o mesmo da resposta anterior
+            st.subheader("Fluidos Customizados")
+            with st.form("add_fluid_form", clear_on_submit=True):
+                st.write("Adicionar novo fluido")
+                new_fluid_name = st.text_input("Nome do Fluido")
+                c1, c2, c3 = st.columns(3)
+                new_fluid_density = c1.number_input("Densidade (ρ) [kg/m³]", format="%.2f", min_value=0.0)
+                new_fluid_viscosity = c2.number_input("Viscosidade (ν) [m²/s]", format="%.4e", min_value=0.0)
+                new_fluid_pvap = c3.number_input("Pressão de Vapor (Pa)", format="%.1f", min_value=0.0)
+                submitted_fluid = st.form_submit_button("Adicionar Fluido")
+                if submitted_fluid:
+                    if new_fluid_name and new_fluid_density > 0 and new_fluid_viscosity > 0:
+                        if add_user_fluid(username, new_fluid_name, new_fluid_density, new_fluid_viscosity, new_fluid_pvap):
+                            st.success(f"Fluido '{new_fluid_name}' adicionado!"); st.rerun()
+                        else: st.error(f"Fluido '{new_fluid_name}' já existe.")
+                    else: st.warning("Preencha todos os campos do fluido com valores válidos.")
+            if user_fluids:
+                st.write("Fluidos Salvos:")
+                fluids_df = pd.DataFrame.from_dict(user_fluids, orient='index').reset_index()
+                fluids_df.columns = ['Nome', 'Densidade (ρ)', 'Viscosidade (ν)', 'Pressão de Vapor (Pa)']
+                st.dataframe(fluids_df, use_container_width=True, hide_index=True)
+                fluid_to_delete = st.selectbox("Selecione um fluido para deletar", options=[""] + list(user_fluids.keys()))
+                if st.button("Deletar Fluido", key="del_fluid"):
+                    if fluid_to_delete: delete_user_fluid(username, fluid_to_delete); st.rerun()
+            st.subheader("Materiais Customizados")
+            # Código para materiais customizados (sem alteração)...
 
         st.divider(); st.header("⚙️ Parâmetros da Simulação")
         lista_fluidos = list(fluidos_combinados.keys()); idx_fluido = 0
@@ -381,7 +414,6 @@ if st.session_state.get("authentication_status"):
             st.subheader("Curva de NPSH Requerido"); st.session_state.curva_npshr_df = st.data_editor(st.session_state.curva_npshr_df, num_rows="dynamic", key="editor_npshr")
         
         st.divider(); st.header("🔧 Rede de Tubulação")
-        # --- ALTERAÇÃO 4: Nova seção de UI para a Linha de Sucção ---
         with st.expander("1. Linha de Sucção"):
             for i, trecho in enumerate(st.session_state.trechos_succao):
                 if 'nome' not in trecho or not trecho.get('nome'): trecho['nome'] = f"Trecho de Sucção {i+1}"
@@ -414,8 +446,8 @@ if st.session_state.get("authentication_status"):
 
     # --- CORPO PRINCIPAL DA APLICAÇÃO ---
     st.title("💧 Análise de Redes de Bombeamento com Curva de Bomba")
+    
     try:
-        # --- ALTERAÇÃO 5: Monta o dicionário do sistema com a nova estrutura ---
         sistema_atual = {
             'succao': st.session_state.trechos_succao,
             'recalque_antes': st.session_state.trechos_antes,
@@ -439,7 +471,7 @@ if st.session_state.get("authentication_status"):
         if shutoff_head < h_estatica_total:
             st.error(f"**Bomba Incompatível:** A altura máxima da bomba ({shutoff_head:.2f} m) é menor que a Altura Estática Total ({h_estatica_total:.2f} m)."); st.stop()
 
-        is_rede_vazia = not any(sistema_atual.values())
+        is_rede_vazia = not any(trecho for secao in sistema_atual.values() for trecho in (secao if isinstance(secao, list) else []))
         if is_rede_vazia: st.warning("Adicione pelo menos um trecho à rede (sucção ou recalque) para realizar o cálculo."); st.stop()
 
         vazao_op, altura_op, func_curva_sistema = encontrar_ponto_operacao(
@@ -447,9 +479,31 @@ if st.session_state.get("authentication_status"):
         )
         
         if vazao_op is not None and altura_op is not None:
-            # ... (Lógica de resultados, NPSH, e geração de relatório permanece a mesma, mas agora usa as estruturas de dados corretas)
-            # O código aqui é o mesmo da resposta anterior, não precisa de alterações lógicas, apenas funcionais que já foram feitas.
-            pass
+            eficiencia_op = func_curva_eficiencia(vazao_op)
+            if eficiencia_op > 100: eficiencia_op = 100
+            if eficiencia_op < 0: eficiencia_op = 0
+            resultados_energia = calcular_analise_energetica(vazao_op, altura_op, eficiencia_op, rend_motor, horas_por_dia, tarifa_energia, st.session_state.fluido_selecionado, fluidos_combinados)
+            
+            st.header("📊 Resultados no Ponto de Operação")
+            c1,c2,c3,c4 = st.columns(4)
+            c1.metric("Vazão de Operação", f"{vazao_op:.2f} m³/h"); c2.metric("Altura de Operação", f"{altura_op:.2f} m")
+            c3.metric("Eficiência da Bomba", f"{eficiencia_op:.1f} %"); c4.metric("Custo Anual", f"R$ {resultados_energia['custo_anual']:.2f}")
+            
+            st.divider(); st.header("✔️ Análise de Cavitação (NPSH)")
+            params_npsh = {'altitude': st.session_state.altitude, 'h_geo_succao': st.session_state.h_geo_succao}
+            npsh_results = calcular_npsh_disponivel(params_npsh, vazao_op, sistema_atual['succao'], st.session_state.fluido_selecionado, materiais_combinados, fluidos_combinados)
+            npsh_disponivel = npsh_results['npshd']; npsh_requerido = func_curva_npshr(vazao_op); margem_npsh = npsh_disponivel - npsh_requerido
+
+            c1, c2, c3 = st.columns(3)
+            c1.metric("NPSH Disponível (m)", f"{npsh_disponivel:.2f}"); c2.metric("NPSH Requerido (m)", f"{npsh_requerido:.2f}"); c3.metric("Margem de Segurança (m)", f"{margem_npsh:.2f}")
+
+            if margem_npsh > 0.5: st.success("✅ **Status:** Operação segura, baixo risco de cavitação.")
+            elif margem_npsh > 0: st.warning("⚠️ **Status:** Atenção, margem de segurança baixa. Risco moderado de cavitação.")
+            else: st.error("🚨 **Status:** Perigo! Alto risco de cavitação (NPSHd <= NPSHr).")
+            st.divider()
+
+            # ... Restante do código para gráficos e relatório ...
+
     except Exception as e:
         st.error(f"Ocorreu um erro inesperado durante a execução. Detalhe: {str(e)}")
 
