@@ -1,0 +1,18 @@
+# config.yaml
+credentials:
+  usernames:
+    pedro: # Nome do usuário
+      email: pedrorodriguesangelo@hotmail.com
+      name: Pedro IA # Nome de exibição
+      password: '123' # Senha (será criptografada na primeira vez que rodar)
+    outro_usuario:
+      email: user@email.com
+      name: Outro Usuário
+      password: '456'
+cookie:
+  expiry_days: 30
+  key: 'some_random_key' # Chave secreta para o cookie de login
+  name: 'some_random_name'
+preauthorized:
+  emails:
+  - user@email.com
