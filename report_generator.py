@@ -1,130 +1,196 @@
+import time
 from fpdf import FPDF
 from datetime import datetime
 import io
 from PIL import Image
+import os
 
-class PDF(FPDF):
+class PDFReport(FPDF):
+    def __init__(self, project_name, scenario_name, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.project_name = project_name
+        self.scenario_name = scenario_name
+        self.set_auto_page_break(auto=True, margin=20) 
+
     def header(self):
-        self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, 'Relatório de Análise de Rede Hidráulica', 0, 1, 'C')
+        self.set_font('Arial', 'B', 16)
+        self.cell(0, 10, 'Relatório de Análise Hidráulica', 0, 1, 'C')
+        self.set_font('Arial', 'B', 10)
+        self.cell(0, 6, 'PumpsProfessional by Process & Accords', 0, 1, 'C')
+        self.set_font('Arial', 'I', 10)
+        self.cell(0, 6, f'Projeto: {self.project_name}', 0, 1, 'C')
+        self.cell(0, 6, f'Cenário: {self.scenario_name}', 0, 1, 'C')
         self.ln(5)
 
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Página {self.page_no()}', 0, 0, 'C')
+        self.set_x(10)
+        self.cell(0, 10, f'Gerado em: {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}', 0, 0, 'L')
 
-    def chapter_title(self, title):
+    def add_section_title(self, title):
+        self.ln(5)
         self.set_font('Arial', 'B', 12)
-        self.cell(0, 10, title, 0, 1, 'L')
+        self.set_fill_color(230, 230, 230)
+        if self.get_y() + 20 > self.page_break_trigger:
+            self.add_page()
+        self.cell(0, 8, title, 0, 1, 'L', fill=True)
         self.ln(4)
 
-    def create_table(self, data, headers, title):
-        self.chapter_title(title)
-        self.set_font('Arial', 'B', 9)
-        col_width = self.w / 2.2
-        for i, header in enumerate(headers):
-            self.cell(col_width, 7, header, 1, 0, 'C')
-        self.ln()
-        self.set_font('Arial', '', 9)
-        for row_key, row_val in data.items():
-            self.cell(col_width, 6, str(row_key), 1)
-            self.cell(col_width, 6, str(row_val), 1)
+    def add_key_value_table(self, data_dict):
+        self.set_font('Arial', '', 10)
+        for key, value in data_dict.items():
+            if self.get_y() + 8 > self.page_break_trigger:
+                self.add_page()
+                self.add_section_title("Continuação dos Parâmetros")
+            self.set_font('', 'B')
+            self.cell(60, 8, f'{key}:', border=1)
+            self.set_font('', '')
+            self.cell(0, 8, f' {value}', border=1)
             self.ln()
-        self.ln(10)
+        self.ln(5)
 
-    def write_network_details(self, segments, title):
-        self.chapter_title(title)
-        if not segments:
-            self.set_font('Arial', 'I', 9)
-            self.cell(0, 6, "Nenhum trecho definido nesta seção.")
-            self.ln(10)
-            return
-
-        for i, trecho in enumerate(segments):
-            self.set_font('Arial', 'B', 10)
-            self.cell(0, 8, f"Trecho {i+1}: {trecho.get('nome', 'N/A')}", 0, 1)
-            data = {
-                "Comprimento (m)": f"{trecho.get('comprimento', 0):.2f}",
-                "Diâmetro (mm)": f"{trecho.get('diametro', 0):.2f}",
-                "Material": trecho.get('material', 'N/A'),
-                "Perda em Equip. (m)": f"{trecho.get('perda_equipamento_m', 0):.2f}"
-            }
-            self.set_font('Arial', '', 9)
-            for key, val in data.items():
-                self.cell(self.w / 4, 6, key, 1)
-                self.cell(self.w / 4, 6, val, 1)
-                self.ln()
-            if trecho.get('acessorios'):
-                self.set_font('Arial', 'B', 9)
-                self.cell(0, 7, "Acessórios neste trecho:", 0, 1)
-                self.cell(self.w / 2.5, 6, "Nome", 1)
-                self.cell(self.w / 5, 6, "Quantidade", 1)
-                self.cell(self.w / 5, 6, "Fator K (unitário)", 1)
-                self.ln()
-                self.set_font('Arial', '', 9)
-                for acc in trecho['acessorios']:
-                    self.cell(self.w / 2.5, 6, acc['nome'], 1)
-                    self.cell(self.w / 5, 6, str(acc['quantidade']), 1)
-                    self.cell(self.w / 5, 6, str(acc['k']), 1)
-                    self.ln()
-            self.ln(5)
-
-def generate_report(project_name, scenario_name, params_data, results_data, metrics_data, network_data, diagram_image_bytes, chart_figure_bytes):
-    try:
-        pdf = PDF()
-        pdf.add_page()
-
-        pdf.set_font('Arial', 'B', 11)
-        pdf.cell(40, 10, 'Projeto:'); pdf.set_font('Arial', '', 11); pdf.cell(0, 10, project_name); pdf.ln(5)
-        pdf.set_font('Arial', 'B', 11)
-        pdf.cell(40, 10, 'Cenário:'); pdf.set_font('Arial', '', 11); pdf.cell(0, 10, scenario_name); pdf.ln(5)
-        pdf.set_font('Arial', 'B', 11)
-        pdf.cell(40, 10, 'Data de Geração:'); pdf.set_font('Arial', '', 11); pdf.cell(0, 10, datetime.now().strftime("%d/%m/%Y %H:%M:%S")); pdf.ln(15)
-
-        pdf.create_table(dict(metrics_data), ["Ponto de Operação", "Valor"], "Resumo do Ponto de Operação")
-        pdf.create_table(results_data, ["Resultados Principais", "Valor"], "Resultados de Performance e Segurança")
-        pdf.create_table(params_data, ["Parâmetros de Entrada", "Valor"], "Parâmetros da Simulação")
-
-        pdf.add_page()
-        pdf.chapter_title("Detalhamento da Rede de Tubulação")
-        pdf.write_network_details(network_data.get('succao', []), "1. Linha de Sucção")
-        recalque = network_data.get('recalque', {})
-        pdf.write_network_details(recalque.get('antes', []), "2.1. Linha de Recalque (Antes da Divisão)")
-        if recalque.get('paralelo'):
-            pdf.chapter_title("2.2. Linha de Recalque (Ramais em Paralelo)")
-            for nome_ramal, trechos_ramal in recalque['paralelo'].items():
-                pdf.write_network_details(trechos_ramal, f"Ramal: {nome_ramal}")
-        pdf.write_network_details(recalque.get('depois', []), "2.3. Linha de Recalque (Depois da Junção)")
-
-        pdf.add_page()
-        pdf.chapter_title("Gráfico de Curvas: Bomba vs. Sistema")
-        if chart_figure_bytes:
-            chart_image = Image.open(io.BytesIO(chart_figure_bytes))
-            w, h = chart_image.size
-            aspect_ratio = h / w
-            new_w = pdf.w - 20
-            new_h = new_w * aspect_ratio
-            pdf.image(io.BytesIO(chart_figure_bytes), x=10, y=None, w=new_w, h=new_h)
-            pdf.ln(5)
+    def add_results_metrics(self, metrics_data):
+        self.set_font('Arial', 'B', 11)
+        num_metrics = len(metrics_data)
+        cell_width = 190 / num_metrics if num_metrics > 0 else 190
         
-        pdf.chapter_title("Diagrama da Rede")
-        if diagram_image_bytes:
-            diagram_image = Image.open(io.BytesIO(diagram_image_bytes))
-            w, h = diagram_image.size
-            aspect_ratio = h / w
-            new_w = pdf.w - 20
-            new_h = new_w * aspect_ratio
-            pdf.image(io.BytesIO(diagram_image_bytes), x=10, y=None, w=new_w, h=new_h)
+        if self.get_y() + 25 > self.page_break_trigger:
+            self.add_page()
+            self.add_section_title("Resultados no Ponto de Operação (Continuação)")
+        
+        for title, _ in metrics_data:
+            self.cell(cell_width, 7, title, 1, 0, 'C')
+        self.ln()
 
-        return pdf.output(dest='S')
+        self.set_font('', '')
+        for _, value in metrics_data:
+            self.cell(cell_width, 10, value, 1, 0, 'C')
+        self.ln()
+        self.ln(5)
 
-    except Exception as e:
-        pdf_error = FPDF()
-        pdf_error.add_page()
-        pdf_error.set_font('Arial', 'B', 14)
-        pdf_error.cell(0, 10, 'Erro ao Gerar o Relatório PDF', 0, 1, 'C')
-        pdf_error.ln(10)
-        pdf_error.set_font('Arial', '', 10)
-        pdf_error.multi_cell(0, 5, f"Ocorreu um erro interno durante a criação do documento PDF.\n\nDetalhe do erro:\n{str(e)}")
-        return pdf_error.output(dest='S')
+    def add_network_summary_table(self, network_data):
+        self.set_font('Arial', 'B', 10)
+        
+        if self.get_y() + 20 > self.page_break_trigger:
+            self.add_page()
+            self.add_section_title("Resumo da Rede de Tubulação (Continuação)")
+
+        self.cell(70, 7, 'Trecho / Ramal', 1, 0, 'C')
+        self.cell(20, 7, 'L (m)', 1, 0, 'C')
+        self.cell(20, 7, 'Ø (mm)', 1, 0, 'C')
+        self.cell(30, 7, 'Perda Equip. (m)', 1, 0, 'C')
+        self.cell(50, 7, 'Material', 1, 1, 'C')
+        
+        self.set_font('Arial', '', 9)
+
+        def draw_rows(title, trechos):
+            if trechos:
+                if self.get_y() + 15 > self.page_break_trigger: self.add_page()
+                self.set_font('', 'B')
+                self.cell(0, 7, title, 1, 1, 'L')
+                self.set_font('', '')
+                for i, trecho in enumerate(trechos):
+                    if self.get_y() + 7 > self.page_break_trigger:
+                        self.add_page()
+                        self.set_font('Arial', 'B', 10)
+                        self.cell(70, 7, 'Trecho / Ramal', 1, 0, 'C')
+                        self.cell(20, 7, 'L (m)', 1, 0, 'C')
+                        self.cell(20, 7, 'Ø (mm)', 1, 0, 'C')
+                        self.cell(30, 7, 'Perda Equip. (m)', 1, 0, 'C')
+                        self.cell(50, 7, 'Material', 1, 1, 'C')
+                        self.set_font('Arial', '', 9)
+
+                    nome_trecho = trecho.get('nome', f'Trecho {i+1}')
+                    perda_equip_val = trecho.get('perda_equipamento_m', 0.0)
+                    
+                    self.cell(70, 7, f'  - {nome_trecho}', 1, 0, 'L')
+                    self.cell(20, 7, f"{trecho['comprimento']:.2f}", 1, 0, 'C')
+                    self.cell(20, 7, f"{trecho['diametro']:.2f}", 1, 0, 'C')
+                    self.cell(30, 7, f"{perda_equip_val:.2f}", 1, 0, 'C')
+                    self.cell(50, 7, trecho['material'], 1, 1, 'L')
+
+        draw_rows('Trechos em Série (Antes)', network_data.get('antes', []))
+        
+        if network_data.get('paralelo'):
+            if self.get_y() + 15 > self.page_break_trigger: self.add_page()
+            self.set_font('', 'B')
+            self.cell(0, 7, 'Ramais em Paralelo', 1, 1, 'L')
+            self.set_font('', '')
+            for ramal_name, trechos_ramal in network_data['paralelo'].items():
+                for i, trecho in enumerate(trechos_ramal):
+                    if self.get_y() + 7 > self.page_break_trigger:
+                        self.add_page()
+                        self.set_font('Arial', 'B', 10)
+                        self.cell(70, 7, 'Trecho / Ramal', 1, 0, 'C')
+                        self.cell(20, 7, 'L (m)', 1, 0, 'C')
+                        self.cell(20, 7, 'Ø (mm)', 1, 0, 'C')
+                        self.cell(30, 7, 'Perda Equip. (m)', 1, 0, 'C')
+                        self.cell(50, 7, 'Material', 1, 1, 'C')
+                        self.set_font('Arial', '', 9)
+                    
+                    nome_trecho_ramal = trecho.get('nome', f'{ramal_name} (T{i+1})')
+                    perda_equip_val = trecho.get('perda_equipamento_m', 0.0)
+
+                    self.cell(70, 7, f'  - {nome_trecho_ramal}', 1, 0, 'L')
+                    self.cell(20, 7, f"{trecho['comprimento']:.2f}", 1, 0, 'C')
+                    self.cell(20, 7, f"{trecho['diametro']:.2f}", 1, 0, 'C')
+                    self.cell(30, 7, f"{perda_equip_val:.2f}", 1, 0, 'C')
+                    self.cell(50, 7, trecho['material'], 1, 1, 'L')
+
+        draw_rows('Trechos em Série (Depois)', network_data.get('depois', []))
+        self.ln(5)
+
+    def add_image_from_bytes(self, image_bytes):
+        temp_img_path = f"temp_image_{time.time()}.png"
+        with open(temp_img_path, "wb") as f:
+            f.write(image_bytes)
+        
+        img_pil = Image.open(temp_img_path)
+        img_width, img_height = img_pil.size
+        img_pil.close()
+
+        max_page_width = 190
+        new_width = max_page_width
+        new_height = img_height * (new_width / img_width)
+
+        available_height = self.page_break_trigger - self.get_y() - 10 
+        
+        if new_height > available_height:
+            self.add_page()
+            available_height_new_page = self.page_break_trigger - self.get_y() - 10
+            if new_height > available_height_new_page:
+                  scale_factor = available_height_new_page / new_height
+                  new_height *= scale_factor
+                  new_width *= scale_factor
+
+        self.image(temp_img_path, x='C', w=new_width)
+        self.ln(5)
+        os.remove(temp_img_path)
+
+
+def generate_report(project_name, scenario_name, params_data, results_data, metrics_data, 
+                    network_data, diagram_image_bytes, chart_figure_bytes):
+    pdf = PDFReport(project_name, scenario_name)
+    pdf.add_page()
+    
+    pdf.add_section_title('Parâmetros Gerais da Simulação')
+    pdf.add_key_value_table(params_data)
+
+    pdf.add_section_title('Resumo da Rede de Tubulação')
+    pdf.add_network_summary_table(network_data)
+
+    pdf.add_section_title('Diagrama da Rede')
+    pdf.add_image_from_bytes(diagram_image_bytes) 
+    
+    pdf.add_section_title('Resultados no Ponto de Operação')
+    pdf.add_results_metrics(metrics_data)
+    
+    pdf.add_section_title('Análise de Custo Energético')
+    pdf.add_key_value_table(results_data)
+
+    pdf.add_section_title('Gráfico: Curva da Bomba vs. Curva do Sistema')
+    pdf.add_image_from_bytes(chart_figure_bytes)
+    
+    return bytes(pdf.output())
