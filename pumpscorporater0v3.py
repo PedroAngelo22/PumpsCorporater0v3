@@ -595,10 +595,13 @@ if st.session_state.get("authentication_status"):
             # --- CÁLCULO DE NPSH ---
             # 1. Pressão na superfície do líquido
             h_superficie_m = 0
+            h_atm_mca = calcular_pressao_atm_mca(st.session_state.altitude, rho_selecionado) # Calculamos sempre
             if st.session_state.suction_tank_type == "Atmosférico":
-                h_superficie_m = calcular_pressao_atm_mca(st.session_state.altitude, rho_selecionado)
+                h_superficie_m = h_atm_mca
             else:
-                h_superficie_m = converter_pressao_para_mca(st.session_state.suction_tank_pressure, 'kgf/cm2', rho_selecionado)
+                h_pressao_man_mca = converter_pressao_para_mca(st.session_state.suction_tank_pressure, 'kgf/cm2', rho_selecionado)
+                # Somamos a pressão atmosférica para obter a pressão absoluta em m.c.a.
+                h_superficie_m = h_pressao_man_mca + h_atm_mca
             # 2. Pressão de vapor
             pv_kpa = fluidos_combinados[st.session_state.fluido_selecionado]['pv_kpa']
             h_vapor_m = converter_pressao_para_mca(pv_kpa, 'kpa', rho_selecionado)
